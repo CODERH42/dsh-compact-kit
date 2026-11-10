@@ -17,6 +17,10 @@
     "SKILL.md",
     "dsh-compact-kit.json.example"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CODERH42/dsh-compact-kit.git"
+  },
   "license": "MIT",
   "dsh": {
     "bundle": {

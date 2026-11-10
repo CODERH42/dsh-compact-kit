@@ -1,5 +1,10 @@
 # dsh-compact-kit
 
+> **English:** A *timing* layer for context compaction in DeepSeek Harness — a waterline
+> reminder that nudges the model to externalize what it still needs before compaction, plus
+> model-initiated compaction that wakes itself up afterwards. Two independent switches, plain
+> config file, no UI required.
+
 给 DSH 补上上下文压缩的**时机**一半。原版 `@deepseek-ai/dsh-compaction-basic` 只在两个时刻动手：数 token 数到窗口 ×0.8，或者撞上 `CONTEXT_WINDOW_EXCEEDED` 兜底。它不知道「这一段还有没落盘的东西」，也不给 agent 任何话事权。
 
 本插件只决定**什么时候压**，怎么压一行都不改。
