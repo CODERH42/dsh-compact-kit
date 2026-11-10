@@ -1,0 +1,34 @@
+# dsh-compact-kit 的 bundle 补丁。
+#
+# 关键设计（2026-11-10 读码确认，解决了旧版 dsh-compact-later 的致命伤）：
+#
+#   dsh-web-app 在**宿主平面**把 `compaction-basic` 禁用了（第 539 行），压缩引擎
+#   改由每个 preset 的 `isolate: {compaction: true}` 组自带。于是宿主平面的插件
+#   `inject: ["compaction"]` 永远 pending —— 旧版退而求其次去 `agent.ctx.get()`，
+#   而 agent.ctx 在 isolate 组**外面**，照样够不到，于是返回 no-compaction-service。
+#
+#   但 compaction-basic 依赖的三样服务 —— `llm` / `tokenMeter` / `sessions` ——
+#   **全部住在宿主平面**（web-app 的注释原话：the token METER stays on the host
+#   plane）。`compactNow(agent, signal)` 只吃一个 agent 对象和一个 signal，
+#   不要求 agent 属于这个引擎的 realm。
+#
+#   ⇒ 宿主平面可以**自己再挂一个引擎**，只当「主动压缩的操作端」用：
+#       auto: false  —— 不注册自动压缩，绝不与 preset 里那个重复触发。
+#   它与 preset 内的引擎是两个独立实例，各自在各自 realm，互不遮蔽。
+#
+# 引擎与工具放进同一个 isolate 组，是为了让工具真的够得到服务（同一 realm）。
+
+- insert:
+    - id: idle-compaction
+      name: cordis:group
+      group: true
+      isolate:
+        compaction: true
+      config:
+        # 只提供 compactNow 这一个能力；auto: false 是硬约束，别改。
+        - id: idle-compaction-engine
+          name: '@deepseek-ai/dsh-compaction-basic'
+          config:
+            auto: false
+        - id: idle-compact
+          name: dsh-compact-kit

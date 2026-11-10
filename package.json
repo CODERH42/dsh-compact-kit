@@ -1,0 +1,26 @@
+{
+  "name": "dsh-compact-kit",
+  "version": "0.3.0",
+  "private": true,
+  "description": "上下文压缩的时机管理：水位提醒（快到线时催你落盘）+ 主动预约压缩（压完自动唤醒），两个开关可独立关闭。",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "lib/",
+    "cordis.patch.yml",
+    "README.md",
+    "SKILL.md",
+    "dsh-compact-kit.json.example"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
