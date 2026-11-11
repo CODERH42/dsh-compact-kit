@@ -18,12 +18,15 @@
 
 两个开关**互不依赖**：提醒不需要压缩服务（它只读 `tokenMeter` / `llm`），所以引擎挂不上时提醒照样工作。这是刻意留的故障隔离——`inject` 里不写 `compaction`，是因为 cordis 的 inject 是硬门禁，一写进去，压缩服务缺失时连提醒都会一起不启动。
 
+`compact_later` 在真正执行前会**先量一次水位**：没到提醒线就跳过（记进 `compact_status` 的结果里），不压、也不唤醒。理由是实测过的——自动压缩刚把水位从 70 万降到 29 万之后，紧接着又压一次到 16 万，那一轮完全是多余的，而且把同一批内容折了两遍（摘要叠摘要，信息掉一层）。
+
 ## 提醒线怎么算
 
 ```
-0.8 线   = 0.8 × 窗口           （原版自动压缩线）
-落盘余量 = max(2048, P90(单步输出) × reserveSteps)
-提醒点   = 0.8 线 − 落盘余量     ，夹在 [窗口 × 0.55, 窗口 × 0.79]
+消息预算 = 窗口 − 输出预留            （预留取自 envelope 的 maxTokens）
+自动压缩线 = min(0.8 × 窗口, 消息预算) − headroom
+落盘余量 = max(2048, P90(单步输出) × reserveSteps, 窗口 × minReserveRatio)
+提醒点   = 自动压缩线 − 落盘余量      ，夹在 [窗口 × 0.55, 窗口 × 0.79]
 ```
 
 由这个算法自然得到两个性质：
@@ -34,6 +37,24 @@
 窗口取法与官方一致：`session.requestHeader()?.config` 的 provider/model → `llm.resolveModelInfo()`。**拿不到窗口就不提醒**，绝不猜一个数字。
 
 冷启动（样本 < `minSamples`）时用保守默认 **0.62**，并在 `compact_status` 里标注「推测」。
+
+### headroom 那一项不能漏（0.3.1 修的）
+
+`compaction-basic` 的自动压缩线不是 `窗口 − 输出预留`，而是**再减一个 `headroomTokens`**（默认 **65536**）：
+
+```js
+// dsh-compaction-basic/lib/index.js
+const pressureBudgetTokens = messageBudgetTokens - policy.headroomTokens;
+const thresholdTokens = Math.floor(Math.min(contextWindow * policy.thresholdRatio, pressureBudgetTokens));
+```
+
+0.3.0 漏了这一项 ⇒ 算出的「压缩线」比真实的高 65536，**算出的「提醒线」于是落在真实压缩线之上**——提醒发出时压缩早就触发了。
+
+2026-11-11 实测现形：1M 窗口 / 预留 256K / headroom 65536 ⇒ 真实压缩线 **678,464**，而 0.3.0 报的提醒线是 **694,000**（比真实压缩线高 25,536）。水位 705,188 那一刻，提醒和压缩同时发生，落盘窗口为 0。
+
+修法就是补上 `headroomTokens`（可配置，默认 65536）。修完 1M 窗口下：压缩线 678,464、提醒线 628,464，**中间正好留出 5 万 token 的落盘窗口**。
+
+> 判据：**提醒线必须用小于号验证过 `< 真实压缩线`**，不能只验证"它比我自己算的压缩线小"——两个都错的时候，比较是自洽的。
 
 ## 统计与推荐值
 
@@ -56,7 +77,8 @@ cp dsh-compact-kit.json.example ~/.dsh/dsh-compact-kit.json
   "remindRatio": "auto",
   "reserveSteps": 4,
   "minSamples": 5,
-  "minReserveTokens": 2048
+  "minReserveTokens": 2048,
+  "headroomTokens": 65536
 }
 ```
 
@@ -64,6 +86,7 @@ cp dsh-compact-kit.json.example ~/.dsh/dsh-compact-kit.json
 - `reserveSteps`：一次落盘大概要几步。
 - `minSamples`：多少样本之后从猜测切到实测。
 - `minReserveTokens` / `minReserveRatio`：落盘余量的两个下限（见下）。
+- `headroomTokens`：**跟 `compaction-basic` 的 `headroomTokens` 保持一致**（默认 65536）。引擎若改了这个值，这里必须跟着改，否则压缩线算高、提醒线失效（见上一节）。
 
 **改完立刻生效，不用重启**（插件每步 stat 一次文件 mtime，只在变化时重读）。文件写坏了会保留上一份配置，不会因为一个逗号就让功能罢工。
 

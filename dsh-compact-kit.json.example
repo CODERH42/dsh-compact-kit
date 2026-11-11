@@ -4,5 +4,6 @@
   "remindRatio": "auto",
   "reserveSteps": 4,
   "minSamples": 5,
-  "minReserveTokens": 2048
+  "minReserveTokens": 2048,
+  "headroomTokens": 65536
 }
